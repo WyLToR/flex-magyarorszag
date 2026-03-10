@@ -30,5 +30,5 @@
     },
     "postStartCommand": "cd /workspace/frontend/mes-app && yarn install && cd /workspace/backend/MesApi && dotnet restore",
     "remoteUser": "vscode",
-    "forwardPorts": [5000, 3000]
+    "forwardPorts": [5001, 3000]
 }

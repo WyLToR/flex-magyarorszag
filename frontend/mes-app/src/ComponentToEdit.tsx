@@ -55,7 +55,7 @@ export const ComponentToEdit = (): JSXElement => {
 
     useEffect(() => {
         const fetchData = async () => {
-            const response = await fetch('http://localhost:5000/api/products')
+            const response = await fetch('http://127.0.0.1:5001/api/products')
 
             setItems(await response.json());
         }
