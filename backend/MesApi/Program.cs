@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
@@ -27,11 +29,133 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseCors();
 
-app.MapGet("/api/products", (ApplicationDbContext context) =>
+app.MapGet("/api/products", async (ApplicationDbContext context) =>
 {
-    return context.Products.ToList();
+    var products = await context.Products
+        .OrderBy(product => product.Id)
+        .ToListAsync();
+
+    return products.Select(product => product.ToReadDto());
 })
 .WithName("GetProducts")
 .WithOpenApi();
 
+app.MapGet("/api/products/{id:int}", async (int id, ApplicationDbContext context) =>
+{
+    var product = await context.Products.FindAsync(id);
+    return product is null ? Results.NotFound() : Results.Ok(product.ToReadDto());
+})
+.WithName("GetProductById")
+.WithOpenApi();
+
+app.MapPost("/api/products", async (ProductCreateDto request, ApplicationDbContext context) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+    {
+        return Results.BadRequest("Name is required.");
+    }
+
+    var product = new Product
+    {
+        Name = request.Name.Trim(),
+        ProductType = request.ProductType,
+        Description = NormalizeNullableText(request.Description),
+        Created = DateTime.UtcNow,
+        Status = request.Status
+    };
+
+    context.Products.Add(product);
+    await context.SaveChangesAsync();
+
+    return Results.Created($"/api/products/{product.Id}", product.ToReadDto());
+})
+.WithName("CreateProduct")
+.WithOpenApi();
+
+app.MapPut("/api/products/{id:int}", async (int id, ProductUpdateDto request, ApplicationDbContext context) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+    {
+        return Results.BadRequest("Name is required.");
+    }
+
+    var product = await context.Products.FindAsync(id);
+    if (product is null)
+    {
+        return Results.NotFound();
+    }
+
+    var normalizedName = request.Name.Trim();
+    var normalizedDescription = NormalizeNullableText(request.Description);
+    var changedFieldOldValues = GetChangedFieldOldValues(product, normalizedName, request.ProductType, normalizedDescription, request.Status);
+
+    product.Name = normalizedName;
+    product.ProductType = request.ProductType;
+    product.Description = normalizedDescription;
+    product.Status = request.Status;
+
+    if (changedFieldOldValues.Count > 0)
+    {
+        product.ModifiedTime = DateTime.UtcNow;
+        product.LastUpdate = string.Join("; ", changedFieldOldValues);
+    }
+
+    await context.SaveChangesAsync();
+    return Results.Ok(product.ToReadDto());
+})
+.WithName("UpdateProduct")
+.WithOpenApi();
+
+app.MapDelete("/api/products/{id:int}", async (int id, ApplicationDbContext context) =>
+{
+    var product = await context.Products.FindAsync(id);
+    if (product is null)
+    {
+        return Results.NotFound();
+    }
+
+    context.Products.Remove(product);
+    await context.SaveChangesAsync();
+    return Results.NoContent();
+})
+.WithName("DeleteProduct")
+.WithOpenApi();
+
 app.Run();
+
+static string? NormalizeNullableText(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return null;
+    }
+
+    return value.Trim();
+}
+
+static List<string> GetChangedFieldOldValues(Product product, string newName, ProductType newProductType, string? newDescription, ProductStatus newStatus)
+{
+    var changedFields = new List<string>();
+
+    if (!string.Equals(product.Name, newName, StringComparison.Ordinal))
+    {
+        changedFields.Add($"Name={product.Name}");
+    }
+
+    if (product.ProductType != newProductType)
+    {
+        changedFields.Add($"ProductType={product.ProductType}");
+    }
+
+    if (!string.Equals(product.Description, newDescription, StringComparison.Ordinal))
+    {
+        changedFields.Add($"Description={product.Description ?? "<null>"}");
+    }
+
+    if (product.Status != newStatus)
+    {
+        changedFields.Add($"Status={product.Status}");
+    }
+
+    return changedFields;
+}

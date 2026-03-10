@@ -1,8 +1,9 @@
 export enum ProductType {
     Phone,
     Tablet,
-    Watch,
-    Earbuds
+    Smartwatch,
+    Earbuds,
+    Webcam
 }
 
 export enum ProductStatus {
@@ -17,8 +18,17 @@ export interface Product {
     id: number;
     name: string;
     productType: ProductType;
-    description: string;
-    created: Date;
+    description: string | null;
+    created: string;
+    status: ProductStatus;
+    modifiedTime: string | null;
+    lastUpdate: string | null;
+}
+
+export interface ProductUpsertRequest {
+    name: string;
+    productType: ProductType;
+    description: string | null;
     status: ProductStatus;
 }
 
