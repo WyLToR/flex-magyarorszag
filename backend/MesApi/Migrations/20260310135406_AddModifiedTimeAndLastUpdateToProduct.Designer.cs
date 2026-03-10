@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace MesApi.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260310135406_AddModifiedTimeAndLastUpdateToProduct")]
+    partial class AddModifiedTimeAndLastUpdateToProduct
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -59,7 +62,7 @@ namespace MesApi.Migrations
                         new
                         {
                             Id = 1,
-                            Created = new DateTime(2026, 3, 10, 2, 33, 41, 665, DateTimeKind.Local).AddTicks(1950),
+                            Created = new DateTime(2026, 3, 7, 19, 15, 28, 980, DateTimeKind.Local).AddTicks(2170),
                             Description = "Phone product description",
                             Name = "Phone product",
                             ProductType = 0,
@@ -68,7 +71,7 @@ namespace MesApi.Migrations
                         new
                         {
                             Id = 2,
-                            Created = new DateTime(2026, 3, 6, 17, 28, 50, 665, DateTimeKind.Local).AddTicks(1950),
+                            Created = new DateTime(2026, 3, 9, 4, 2, 0, 980, DateTimeKind.Local).AddTicks(2170),
                             Description = "Tablet product description",
                             Name = "Tablet product",
                             ProductType = 1,
@@ -77,7 +80,7 @@ namespace MesApi.Migrations
                         new
                         {
                             Id = 3,
-                            Created = new DateTime(2026, 3, 6, 3, 3, 14, 665, DateTimeKind.Local).AddTicks(1950),
+                            Created = new DateTime(2026, 3, 9, 5, 35, 21, 980, DateTimeKind.Local).AddTicks(2170),
                             Description = "Smartwatch product description",
                             Name = "Smartwatch product",
                             ProductType = 2,
@@ -86,7 +89,7 @@ namespace MesApi.Migrations
                         new
                         {
                             Id = 4,
-                            Created = new DateTime(2026, 3, 10, 1, 10, 54, 665, DateTimeKind.Local).AddTicks(1950),
+                            Created = new DateTime(2026, 3, 7, 10, 5, 20, 980, DateTimeKind.Local).AddTicks(2170),
                             Description = "Earbuds product description",
                             Name = "Earbuds product",
                             ProductType = 3,
