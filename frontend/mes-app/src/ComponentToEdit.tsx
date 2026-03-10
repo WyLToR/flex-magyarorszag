@@ -1,153 +1,145 @@
-import { JSX, FormEvent, useCallback, useEffect, useState } from "react";
-import {
-    PhoneRegular,
-    TabletRegular,
-    SmartwatchRegular,
-    SurfaceEarbudsRegular,
-    DeviceMeetingRoomRegular,
-    EditRegular
-} from "@fluentui/react-icons";
-import {
-    TableBody,
-    TableCell,
-    TableRow,
-    Table,
-    TableHeader,
-    TableHeaderCell,
-    TableCellLayout,
-    Badge,
-    Button
-} from "@fluentui/react-components";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { JSXElement } from "@fluentui/react-components";
-import TimeAgo from "javascript-time-ago";
-import en from "javascript-time-ago/locale/en";
-import { Product, ProductStatus, ProductUpsertRequest, getProductStatusColor, ProductType } from "./helper";
+import { Product, ProductUpsertRequest } from "./helper";
+import {
+    ProductFormState,
+    createInitialFormState,
+    createWebcamTemplateState
+} from "./components/products/formTypes";
+import { ProductEditorForm } from "./components/products/ProductEditorForm";
+import { ProductsTable } from "./components/products/ProductsTable";
+import { SearchPanel } from "./components/products/SearchPanel";
 
-TimeAgo.addDefaultLocale(en);
-const timeAgo = new TimeAgo("en-US");
-const apiBaseUrl = "http://127.0.0.1:5001/api/products";
+const API_BASE_URL = "http://127.0.0.1:5001/api/products";
 
-const productTypeOptions = [
-    { value: ProductType.Phone, label: "Phone" },
-    { value: ProductType.Tablet, label: "Tablet" },
-    { value: ProductType.Smartwatch, label: "Smartwatch" },
-    { value: ProductType.Earbuds, label: "Earbuds" },
-    { value: ProductType.Webcam, label: "Webcam" }
-];
+const toFormState = (product: Product): ProductFormState => ({
+    name: product.name,
+    productType: product.productType,
+    description: product.description ?? "",
+    status: product.status
+});
 
-const statusOptions = [
-    { value: ProductStatus.Completed, label: "Completed" },
-    { value: ProductStatus.InProgress, label: "In Progress" },
-    { value: ProductStatus.Halted, label: "Halted" },
-    { value: ProductStatus.Failed, label: "Failed" },
-    { value: ProductStatus.Canceled, label: "Canceled" }
-];
+const toUpsertRequest = (form: ProductFormState): ProductUpsertRequest => ({
+    name: form.name.trim(),
+    productType: form.productType,
+    description: form.description.trim() ? form.description.trim() : null,
+    status: form.status
+});
 
-const getProductIcon = (productType: ProductType): JSX.Element => {
-    switch (productType) {
-        case ProductType.Phone:
-            return <PhoneRegular />;
-        case ProductType.Tablet:
-            return <TabletRegular />;
-        case ProductType.Smartwatch:
-            return <SmartwatchRegular />;
-        case ProductType.Earbuds:
-            return <SurfaceEarbudsRegular />;
-        case ProductType.Webcam:
-            return <DeviceMeetingRoomRegular />;
-        default:
-            return <DeviceMeetingRoomRegular />;
+const getProductsUrl = (search: string): string => {
+    const query = search.trim();
+    if (!query) {
+        return API_BASE_URL;
     }
+
+    return `${API_BASE_URL}?search=${encodeURIComponent(query)}`;
 };
 
-type ProductFormState = {
-    name: string;
-    productType: ProductType;
-    description: string;
-    status: ProductStatus;
+const throwIfNotOk = async (response: Response, fallback: string): Promise<void> => {
+    if (response.ok) {
+        return;
+    }
+
+    const message = (await response.text()).trim();
+    throw new Error(message || `${fallback} (${response.status})`);
 };
 
-const columns = [
-    { columnKey: "product", label: "Product" },
-    { columnKey: "type", label: "Type" },
-    { columnKey: "status", label: "Status" },
-    { columnKey: "description", label: "Description" },
-    { columnKey: "created", label: "Created" },
-    { columnKey: "modified", label: "Modified" },
-    { columnKey: "lastUpdate", label: "Last Update" },
-    { columnKey: "actions", label: "Actions" }
-];
+const fetchProducts = async (search: string): Promise<Product[]> => {
+    const response = await fetch(getProductsUrl(search));
+    await throwIfNotOk(response, "Failed to load products");
+    return response.json() as Promise<Product[]>;
+};
+
+const saveProduct = async (productId: number | null, payload: ProductUpsertRequest): Promise<void> => {
+    const isEdit = productId !== null;
+    const response = await fetch(isEdit ? `${API_BASE_URL}/${productId}` : API_BASE_URL, {
+        method: isEdit ? "PUT" : "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    });
+
+    await throwIfNotOk(response, isEdit ? "Update failed" : "Create failed");
+};
+
+const removeProduct = async (productId: number): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/${productId}`, {
+        method: "DELETE"
+    });
+    await throwIfNotOk(response, "Delete failed");
+};
 
 export const ComponentToEdit = (): JSXElement => {
     const [items, setItems] = useState<Product[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [searchText, setSearchText] = useState("");
+    const [activeSearch, setActiveSearch] = useState("");
     const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
-    const [form, setForm] = useState<ProductFormState>({
-        name: "",
-        productType: ProductType.Phone,
-        description: "",
-        status: ProductStatus.InProgress
-    });
+    const [form, setForm] = useState<ProductFormState>(createInitialFormState);
 
-    const resetToCreateMode = () => {
+    const hasActiveSearch = useMemo(() => activeSearch.trim().length > 0, [activeSearch]);
+
+    const resetToCreateMode = useCallback(() => {
         setSelectedProductId(null);
-        setForm({
-            name: "",
-            productType: ProductType.Phone,
-            description: "",
-            status: ProductStatus.InProgress
-        });
-    };
+        setForm(createInitialFormState());
+    }, []);
 
     const loadProducts = useCallback(async () => {
         setIsLoading(true);
         setError(null);
 
         try {
-            const response = await fetch(apiBaseUrl);
-            if (!response.ok) {
-                throw new Error(`Failed to load products (${response.status})`);
-            }
-
-            const data: Product[] = await response.json();
+            const data = await fetchProducts(activeSearch);
             setItems(data);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to load products.");
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [activeSearch]);
 
     useEffect(() => {
-        loadProducts();
+        void loadProducts();
     }, [loadProducts]);
 
-    const handleStartEdit = (product: Product) => {
+    const handleSearchSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const nextSearch = searchText.trim();
+
+        if (nextSearch === activeSearch) {
+            await loadProducts();
+            return;
+        }
+
+        setActiveSearch(nextSearch);
+    }, [activeSearch, loadProducts, searchText]);
+
+    const handleSearchClear = useCallback(() => {
+        if (!searchText && !activeSearch) {
+            return;
+        }
+
+        setSearchText("");
+        setActiveSearch("");
+    }, [activeSearch, searchText]);
+
+    const handleStartEdit = useCallback((product: Product) => {
         setSelectedProductId(product.id);
-        setForm({
-            name: product.name,
-            productType: product.productType,
-            description: product.description ?? "",
-            status: product.status
-        });
-    };
+        setForm(toFormState(product));
+    }, []);
 
-    const handleInputChange = <K extends keyof ProductFormState>(field: K, value: ProductFormState[K]) => {
+    const handleFormChange = useCallback(<K extends keyof ProductFormState>(field: K, value: ProductFormState[K]) => {
         setForm((current) => ({ ...current, [field]: value }));
-    };
+    }, []);
 
-    const handleCreateWebcamTemplate = () => {
+    const handleUseWebcamTemplate = useCallback(() => {
         setSelectedProductId(null);
-        setForm({
-            name: "Webcam product",
-            productType: ProductType.Webcam,
-            description: "Webcam product description",
-            status: ProductStatus.InProgress
-        });
-    };
+        setForm(createWebcamTemplateState());
+    }, []);
 
-    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    const handleFormSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setError(null);
 
@@ -156,201 +148,64 @@ export const ComponentToEdit = (): JSXElement => {
             return;
         }
 
-        const payload: ProductUpsertRequest = {
-            name: form.name.trim(),
-            productType: form.productType,
-            description: form.description.trim() ? form.description.trim() : null,
-            status: form.status
-        };
-
-        const isEdit = selectedProductId !== null;
-        const url = isEdit ? `${apiBaseUrl}/${selectedProductId}` : apiBaseUrl;
-        const method = isEdit ? "PUT" : "POST";
-
         try {
-            const response = await fetch(url, {
-                method,
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                const errorMessage = await response.text();
-                throw new Error(errorMessage || `${method} failed (${response.status})`);
-            }
-
+            await saveProduct(selectedProductId, toUpsertRequest(form));
             await loadProducts();
             resetToCreateMode();
         } catch (err) {
             setError(err instanceof Error ? err.message : "Save failed.");
         }
-    };
+    }, [form, loadProducts, resetToCreateMode, selectedProductId]);
 
-    const handleDelete = async (product: Product) => {
+    const handleDelete = useCallback(async (product: Product) => {
         if (!window.confirm(`Delete "${product.name}"?`)) {
             return;
         }
 
         setError(null);
         try {
-            const response = await fetch(`${apiBaseUrl}/${product.id}`, {
-                method: "DELETE"
-            });
-
-            if (!response.ok) {
-                throw new Error(`Delete failed (${response.status})`);
-            }
-
+            await removeProduct(product.id);
             await loadProducts();
+
             if (selectedProductId === product.id) {
                 resetToCreateMode();
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : "Delete failed.");
         }
-    };
+    }, [loadProducts, resetToCreateMode, selectedProductId]);
 
     return (
         <>
             <div style={{ backgroundColor: "#f0f0f0", color: "#000", padding: 10, marginBottom: 12 }}>Products</div>
 
-            <form
-                onSubmit={handleSubmit}
-                style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 10,
-                    marginBottom: 14,
-                    padding: 12,
-                    border: "1px solid #d0d0d0",
-                    borderRadius: 8
-                }}
-            >
-                <div style={{ gridColumn: "1 / -1", textAlign: "left", fontWeight: 600 }}>
-                    {selectedProductId === null ? "Create Product" : `Edit Product #${selectedProductId}`}
-                </div>
-                <label style={{ textAlign: "left" }}>
-                    Name
-                    <input
-                        value={form.name}
-                        onChange={(event) => handleInputChange("name", event.target.value)}
-                        style={{ display: "block", width: "100%", padding: 8, boxSizing: "border-box" }}
-                        placeholder="Product name"
-                    />
-                </label>
-                <label style={{ textAlign: "left" }}>
-                    Type
-                    <select
-                        value={form.productType}
-                        onChange={(event) => handleInputChange("productType", Number(event.target.value) as ProductType)}
-                        style={{ display: "block", width: "100%", padding: 8, boxSizing: "border-box" }}
-                    >
-                        {productTypeOptions.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                    </select>
-                </label>
-                <label style={{ textAlign: "left" }}>
-                    Status
-                    <select
-                        value={form.status}
-                        onChange={(event) => handleInputChange("status", Number(event.target.value) as ProductStatus)}
-                        style={{ display: "block", width: "100%", padding: 8, boxSizing: "border-box" }}
-                    >
-                        {statusOptions.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                    </select>
-                </label>
-                <label style={{ textAlign: "left", gridColumn: "1 / -1" }}>
-                    Description
-                    <textarea
-                        value={form.description}
-                        onChange={(event) => handleInputChange("description", event.target.value)}
-                        rows={2}
-                        style={{ display: "block", width: "100%", padding: 8, boxSizing: "border-box", resize: "vertical" }}
-                    />
-                </label>
-                <div style={{ display: "flex", gap: 8, gridColumn: "1 / -1" }}>
-                    <Button type="submit" appearance="primary">
-                        {selectedProductId === null ? "Create" : "Update"}
-                    </Button>
-                    <Button type="button" appearance="secondary" onClick={resetToCreateMode}>
-                        Clear
-                    </Button>
-                    <Button type="button" appearance="subtle" onClick={handleCreateWebcamTemplate}>
-                        Example: Webcam
-                    </Button>
-                </div>
-            </form>
+            <SearchPanel
+                searchText={searchText}
+                activeSearch={activeSearch}
+                onSearchTextChange={setSearchText}
+                onSearchSubmit={handleSearchSubmit}
+                onSearchClear={handleSearchClear}
+            />
+
+            <ProductEditorForm
+                form={form}
+                selectedProductId={selectedProductId}
+                onChange={handleFormChange}
+                onSubmit={handleFormSubmit}
+                onClear={resetToCreateMode}
+                onUseWebcamTemplate={handleUseWebcamTemplate}
+            />
 
             {error && <div style={{ color: "#b10e1e", marginBottom: 10, textAlign: "left" }}>{error}</div>}
             {isLoading && <div style={{ marginBottom: 10, textAlign: "left" }}>Loading products...</div>}
 
-            <Table aria-label="Products table" style={{ minWidth: "700px" }}>
-                <TableHeader>
-                    <TableRow>
-                        {columns.map((column) => (
-                            <TableHeaderCell key={column.columnKey}>
-                                {column.label}
-                            </TableHeaderCell>
-                        ))}
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {items.map((product: Product) => (
-                        <TableRow key={product.id}>
-                            <TableCell>
-                                <TableCellLayout>
-                                    {product.name}
-                                </TableCellLayout>
-                            </TableCell>
-                            <TableCell>
-                                <TableCellLayout media={getProductIcon(product.productType)}>
-                                    {ProductType[product.productType]}
-                                </TableCellLayout>
-                            </TableCell>
-                            <TableCell>
-                                <TableCellLayout>
-                                    <Badge role="img" title={ProductStatus[product.status]} aria-label="Active" appearance="filled" color={getProductStatusColor(product.status)} />
-                                </TableCellLayout>
-                            </TableCell>
-                            <TableCell>
-                                <TableCellLayout>
-                                    {product.description ?? "-"}
-                                </TableCellLayout>
-                            </TableCell>
-                            <TableCell>
-                                <TableCellLayout>
-                                    {timeAgo.format(new Date(product.created))}
-                                </TableCellLayout>
-                            </TableCell>
-                            <TableCell>
-                                <TableCellLayout>
-                                    {product.modifiedTime ? timeAgo.format(new Date(product.modifiedTime)) : "-"}
-                                </TableCellLayout>
-                            </TableCell>
-                            <TableCell>
-                                <TableCellLayout>
-                                    {product.lastUpdate ?? "-"}
-                                </TableCellLayout>
-                            </TableCell>
-                            <TableCell>
-                                <TableCellLayout>
-                                    <Button appearance="subtle" onClick={() => handleStartEdit(product)} icon={<EditRegular />}>
-                                        Edit
-                                    </Button>
-                                    <Button appearance="subtle" onClick={() => handleDelete(product)}>
-                                        Delete
-                                    </Button>
-                                </TableCellLayout>
-                            </TableCell>
-                        </TableRow>
-                    ))}
-                </TableBody>
-            </Table>
+            {!isLoading && items.length === 0 && (
+                <div style={{ marginBottom: 10, textAlign: "left", color: "#5a5a5a" }}>
+                    {hasActiveSearch ? "No products match the current search." : "No products found."}
+                </div>
+            )}
+
+            <ProductsTable items={items} onEdit={handleStartEdit} onDelete={handleDelete} />
         </>
     );
 };

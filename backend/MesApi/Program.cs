@@ -29,9 +29,35 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseCors();
 
-app.MapGet("/api/products", async (ApplicationDbContext context) =>
+app.MapGet("/api/products", async (string? search, ApplicationDbContext context) =>
 {
-    var products = await context.Products
+    var query = context.Products.AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var term = search.Trim();
+
+        query = query.Where(product =>
+            product.Name.Contains(term) ||
+            (product.Description != null && product.Description.Contains(term)));
+
+        if (int.TryParse(term, out var parsedId))
+        {
+            query = query.Union(context.Products.Where(product => product.Id == parsedId));
+        }
+
+        if (Enum.TryParse<ProductType>(term, true, out var parsedType))
+        {
+            query = query.Union(context.Products.Where(product => product.ProductType == parsedType));
+        }
+
+        if (Enum.TryParse<ProductStatus>(term, true, out var parsedStatus))
+        {
+            query = query.Union(context.Products.Where(product => product.Status == parsedStatus));
+        }
+    }
+
+    var products = await query
         .OrderBy(product => product.Id)
         .ToListAsync();
 
