@@ -177,8 +177,6 @@ export const ComponentToEdit = (): JSXElement => {
 
     return (
         <>
-            <div style={{ backgroundColor: "#f0f0f0", color: "#000", padding: 10, marginBottom: 12 }}>Products</div>
-
             <SearchPanel
                 searchText={searchText}
                 activeSearch={activeSearch}
